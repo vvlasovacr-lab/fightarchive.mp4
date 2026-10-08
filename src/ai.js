@@ -8,7 +8,7 @@ async function ask(model, system, user, maxTokens = 900) {
       'x-api-key': config.anthropicKey,
       'anthropic-version':'2023-06-01',
     },
-    body: JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.2, system, messages:[{role:'user',content:user}] }),
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages:[{role:'user',content:user}] }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${body?.error?.message || 'unknown error'}`);
