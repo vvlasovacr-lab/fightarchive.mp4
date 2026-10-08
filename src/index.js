@@ -1,0 +1,59 @@
+import { config } from './config.js';
+import { initDb, pool, q } from './db.js';
+import { log, error } from './logger.js';
+import { botInfo, getUpdates } from './telegram.js';
+import { seedSources, scanNews } from './sources.js';
+import { publishNext } from './publisher.js';
+import { processCommentUpdate } from './moderation.js';
+import { handleCommand } from './commands.js';
+
+async function isPaused() {
+  const v = (await q(`SELECT value FROM settings WHERE key='paused'`)).rows[0]?.value;
+  return v === '1';
+}
+
+async function pollUpdates() {
+  let offset = Number((await q(`SELECT value FROM settings WHERE key='offset'`)).rows[0]?.value || 0);
+  try {
+    const updates = await getUpdates(offset, 10);
+    for (const u of updates) {
+      offset = u.update_id + 1;
+      await q(`INSERT INTO settings(key,value) VALUES('offset',$1) ON CONFLICT(key) DO UPDATE SET value=$1`,[String(offset)]);
+      const msg = u.message;
+      if (!msg) continue;
+      if (msg.text?.startsWith('/')) await handleCommand(msg);
+      await processCommentUpdate(msg);
+    }
+  } catch (e) {
+    error('BOT','poll failed',{error:e.message});
+  }
+}
+
+async function safeScan() {
+  try { await scanNews(); } catch (e) { error('NEWS','scan failed',{error:e.message}); }
+}
+
+async function safePublish() {
+  try { if (!await isPaused()) await publishNext(); } catch (e) { error('PUBLISH','publish failed',{error:e.message}); }
+}
+
+async function main() {
+  if (!config.databaseUrl || !config.telegramToken || !config.anthropicKey) throw new Error('Missing required environment variables');
+  await initDb();
+  await seedSources();
+  const me = await botInfo();
+  log('BOOT','started',{bot:me.username,autoPublish:config.autoPublish,fastModel:config.fastModel,strongModel:config.strongModel});
+
+  await safeScan();
+  await safePublish();
+
+  setInterval(safeScan, config.newsIntervalMs);
+  setInterval(safeScan, config.archiveIntervalMs);
+  setInterval(pollUpdates, 5000);
+  setInterval(safePublish, 60_000);
+}
+
+process.on('SIGTERM', async()=>{ await pool.end(); process.exit(0); });
+process.on('SIGINT', async()=>{ await pool.end(); process.exit(0); });
+
+main().catch(e=>{ error('BOOT','fatal',{error:e.message}); process.exit(1); });
