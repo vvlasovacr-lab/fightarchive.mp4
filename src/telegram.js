@@ -29,4 +29,12 @@ export async function getUpdates(offset = 0, timeout = 25) {
   return tg('getUpdates', { offset, timeout, allowed_updates: ['message','channel_post'] });
 }
 
+export async function deleteWebhook(dropPending = false) {
+  return tg('deleteWebhook', { drop_pending_updates: dropPending });
+}
+
+export async function getChatMemberCount(chatId) {
+  return tg('getChatMemberCount', { chat_id: chatId });
+}
+
 export async function botInfo() { return tg('getMe'); }
