@@ -16,6 +16,11 @@ export async function handleCommand(msg) {
   const [cmd, ...rest] = msg.text.trim().split(/\s+/);
   const arg = rest.join(' ');
 
+  if (cmd === '/chatid') {
+    await sendText(msg.chat.id, `Chat ID: ${msg.chat.id}`);
+    return true;
+  }
+
   if (cmd === '/status') {
     const p = await q(`SELECT COUNT(*) filter(where status='QUEUED') queued, COUNT(*) filter(where status='PUBLISHED') published FROM posts`);
     await sendText(msg.chat.id, `FIGHT ARCHIVE\nQueued: ${p.rows[0].queued}\nPublished: ${p.rows[0].published}\nAuto publish: ${config.autoPublish?'ON':'OFF'}`);
