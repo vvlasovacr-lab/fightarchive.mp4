@@ -24,14 +24,14 @@ async function pollUpdatesOnce() {
     const updates = await getUpdates(offset, 10);
     for (const u of updates) {
       offset = u.update_id + 1;
-      await q(`INSERT INTO settings(key,value) VALUES('offset',$1) ON CONFLICT(key) DO UPDATE SET value=$1`,[String(offset)]);
+      await q(`INSERT INTO settings(key,value) VALUES('offset',$1) ON CONFLICT(key) DO UPDATE SET value=$1`, [String(offset)]);
       const msg = u.message;
       if (!msg) continue;
       if (msg.text?.startsWith('/')) await handleCommand(msg);
       await processCommentUpdate(msg);
     }
   } catch (e) {
-    error('BOT','poll failed',{error:e.message});
+    error('BOT', 'poll failed', { error: e.message });
   } finally {
     polling = false;
   }
@@ -43,7 +43,7 @@ async function safeScan() {
   try {
     await scanNews();
   } catch (e) {
-    error('NEWS','scan failed',{error:e.message});
+    error('NEWS', 'scan failed', { error: e.message });
   } finally {
     scanning = false;
   }
@@ -55,7 +55,7 @@ async function safePublish() {
   try {
     if (!await isPaused()) await publishNext();
   } catch (e) {
-    error('PUBLISH','publish failed',{error:e.message});
+    error('PUBLISH', 'publish failed', { error: e.message });
   } finally {
     publishing = false;
   }
@@ -63,7 +63,7 @@ async function safePublish() {
 
 async function main() {
   if (!config.databaseUrl || !config.telegramToken || !config.anthropicKey) {
-    throw new Error('Missing required environment variables');
+    throw new Error('Missing required environment variables: DATABASE_URL, TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY');
   }
 
   await initDb();
@@ -71,18 +71,30 @@ async function main() {
   await deleteWebhook(false);
 
   const me = await botInfo();
-  log('BOOT','started',{bot:me.username,autoPublish:config.autoPublish,fastModel:config.fastModel,strongModel:config.strongModel});
+  log('BOOT', 'started', {
+    bot: me.username,
+    autoPublish: config.autoPublish,
+    fastModel: config.fastModel,
+    strongModel: config.strongModel
+  });
 
-  await safeScan();
-  await safePublish();
+  // Start responding to Telegram immediately; the first RSS+AI scan can take time.
   await pollUpdatesOnce();
-
-  setInterval(safeScan, config.newsIntervalMs);
   setInterval(pollUpdatesOnce, config.moderationIntervalMs);
+
+  // Start recurring jobs before the first scan, so a slow feed/API can't block the bot.
+  setInterval(safeScan, config.newsIntervalMs);
   setInterval(safePublish, 60_000);
+
+  // Run discovery in the background instead of blocking bot replies.
+  void safeScan();
+  void safePublish();
 }
 
-process.on('SIGTERM', async()=>{ await pool.end(); process.exit(0); });
-process.on('SIGINT', async()=>{ await pool.end(); process.exit(0); });
+process.on('SIGTERM', async () => { await pool.end(); process.exit(0); });
+process.on('SIGINT', async () => { await pool.end(); process.exit(0); });
 
-main().catch(e=>{ error('BOOT','fatal',{error:e.message}); process.exit(1); });
+main().catch(e => {
+  error('BOOT', 'fatal', { error: e.message });
+  process.exit(1);
+});
